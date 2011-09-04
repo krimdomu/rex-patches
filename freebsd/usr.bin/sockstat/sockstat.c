@@ -59,6 +59,33 @@ __FBSDID("$FreeBSD: src/usr.bin/sockstat/sockstat.c,v 1.21.2.2.4.1 2010/12/21 17
 #include <string.h>
 #include <unistd.h>
 
+/*
+ * Output-Format definitions
+ */
+
+#define OUT_STD_HEADER_USER 		"%-8s "
+#define OUT_STD_HEADER_COMMAND 		"%-10s "
+#define OUT_STD_HEADER_PID 		"%-5s "
+#define OUT_STD_HEADER_FD 		"%-2s "
+#define OUT_STD_HEADER_PROTO 		"%-6s "
+#define OUT_STD_HEADER_LOCAL_ADDRESS 	"%-21s "
+#define OUT_STD_HEADER_FOREIGN_ADDRESS 	"%-21s\n"
+
+#define OUT_STD_UID 		"%lu "
+#define OUT_STD_USER 		"%s "
+#define OUT_STD_COMMAND		"%.10s "
+#define OUT_STD_PID		"%lu "
+#define OUT_STD_FD		"%d "
+#define OUT_STD_PROTO		"%s "
+
+#define OUT_M_UID 	"%lu,"
+#define OUT_M_USER 	"%s,"
+#define OUT_M_COMMAND 	"%s,"
+#define OUT_M_PID 	"%lu,"
+#define OUT_M_FD 	"%d,"
+#define OUT_M_PROTO 	"%s,"
+
+
 static int	 opt_4;		/* Show IPv4 sockets */
 static int	 opt_6;		/* Show IPv6 sockets */
 static int	 opt_c;		/* Show connected sockets */
@@ -66,6 +93,7 @@ static int	 opt_L;		/* Don't show IPv4 or IPv6 loopback sockets */
 static int	 opt_l;		/* Show listening sockets */
 static int	 opt_u;		/* Show Unix domain sockets */
 static int	 opt_v;		/* Verbose mode */
+static int	 opt_m;		/* Machine parseable output */
 
 /*
  * Default protocols to use if no -P was defined.
@@ -579,9 +607,16 @@ display(void)
 	void *p;
 	int hash, n, pos;
 
-	printf("%-8s %-10s %-5s %-2s %-6s %-21s %-21s\n",
-	    "USER", "COMMAND", "PID", "FD", "PROTO",
-	    "LOCAL ADDRESS", "FOREIGN ADDRESS");
+	if(! opt_m) 
+		printf(OUT_STD_HEADER_USER
+			OUT_STD_HEADER_COMMAND
+			OUT_STD_HEADER_PID
+			OUT_STD_HEADER_FD
+			OUT_STD_HEADER_PROTO
+			OUT_STD_HEADER_LOCAL_ADDRESS
+			OUT_STD_HEADER_FOREIGN_ADDRESS,
+		    "USER", "COMMAND", "PID", "FD", "PROTO",
+		    "LOCAL ADDRESS", "FOREIGN ADDRESS");
 	setpassent(1);
 	for (xf = xfiles, n = 0; n < nxfiles; ++n, ++xf) {
 		if (xf->xf_data == NULL)
@@ -596,35 +631,60 @@ display(void)
 			continue;
 		pos = 0;
 		if ((pwd = getpwuid(xf->xf_uid)) == NULL)
-			pos += xprintf("%lu ", (u_long)xf->xf_uid);
+			if(opt_m)
+				pos += xprintf(OUT_M_UID, (u_long)xf->xf_uid);
+			else
+				pos += xprintf(OUT_STD_UID, (u_long)xf->xf_uid);
 		else
-			pos += xprintf("%s ", pwd->pw_name);
-		while (pos < 9)
-			pos += xprintf(" ");
-		pos += xprintf("%.10s", getprocname(xf->xf_pid));
-		while (pos < 20)
-			pos += xprintf(" ");
-		pos += xprintf("%lu ", (u_long)xf->xf_pid);
-		while (pos < 26)
-			pos += xprintf(" ");
-		pos += xprintf("%d ", xf->xf_fd);
-		while (pos < 29)
-			pos += xprintf(" ");
-		pos += xprintf("%s", s->protoname);
+			if(opt_m)
+				pos += xprintf(OUT_M_USER, pwd->pw_name);
+			else
+				pos += xprintf(OUT_STD_USER, pwd->pw_name);
+		if(!opt_m)
+			while (pos < 9)
+				pos += xprintf(" ");
+		if(opt_m)
+			pos += xprintf(OUT_M_COMMAND, getprocname(xf->xf_pid));
+		else
+			pos += xprintf(OUT_STD_COMMAND, getprocname(xf->xf_pid));
+		if(!opt_m)
+			while (pos < 20)
+				pos += xprintf(" ");
+		if(opt_m)
+			pos += xprintf(OUT_M_PID, (u_long)xf->xf_pid);
+		else
+			pos += xprintf(OUT_STD_PID, (u_long)xf->xf_pid);
+		if(!opt_m)
+			while (pos < 26)
+				pos += xprintf(" ");
+		if(opt_m)
+			pos += xprintf(OUT_M_FD, xf->xf_fd);
+		else
+			pos += xprintf(OUT_STD_FD, xf->xf_fd);
+		if(!opt_m)
+			while (pos < 29)
+				pos += xprintf(" ");
+		if(opt_m)
+			pos += xprintf(OUT_M_PROTO, s->protoname);
+		else
+			pos += xprintf(OUT_STD_PROTO, s->protoname);
 		if (s->vflag & INP_IPV4)
 			pos += xprintf("4 ");
 		if (s->vflag & INP_IPV6)
 			pos += xprintf("6 ");
-		while (pos < 36)
-			pos += xprintf(" ");
+		if(opt_m) pos += xprintf(",");
+		if(!opt_m)
+			while (pos < 36)
+				pos += xprintf(" ");
 		switch (s->family) {
 		case AF_INET:
 		case AF_INET6:
 			pos += printaddr(s->family, &s->laddr);
-			if (s->family == AF_INET6 && pos >= 58)
+			if (s->family == AF_INET6 && pos >= 58 && ! opt_m)
 				pos += xprintf(" ");
-			while (pos < 58)
-				pos += xprintf(" ");
+			if(!opt_m)
+				while (pos < 58)
+					pos += xprintf(" ");
 			pos += printaddr(s->family, &s->faddr);
 			break;
 		case AF_UNIX:
@@ -683,7 +743,7 @@ static void
 usage(void)
 {
 	fprintf(stderr,
-	    "Usage: sockstat [-46cLlu] [-p ports] [-P protocols]\n");
+	    "Usage: sockstat [-46cLlum] [-p ports] [-P protocols]\n");
 	exit(1);
 }
 
@@ -693,7 +753,7 @@ main(int argc, char *argv[])
 	int protos_defined = -1;
 	int o, i;
 
-	while ((o = getopt(argc, argv, "46cLlp:P:uv")) != -1)
+	while ((o = getopt(argc, argv, "46cLlp:P:uvm")) != -1)
 		switch (o) {
 		case '4':
 			opt_4 = 1;
@@ -721,6 +781,9 @@ main(int argc, char *argv[])
 			break;
 		case 'v':
 			++opt_v;
+			break;
+		case 'm':
+			opt_m = 1;
 			break;
 		default:
 			usage();
