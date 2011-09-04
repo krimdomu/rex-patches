@@ -1,2 +1,6 @@
 Repository of programs patched to work with (R)?ex
 
+= FreeBSD =
+
+freebsd/usr.bin/sockstat - Added "-m" CLI switch for better parsable output.
+
